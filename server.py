@@ -39,7 +39,11 @@ class KVServer:
     def _responsible_for_key(self, key):
         try:
             shard = int(key) % getattr(self.cfg, "nservers", 1)
-            return getattr(self.cfg, "kvservers", [self])[shard] is self
+            my_indices = [i for i, s in enumerate(getattr(self.cfg, "kvservers", [])) if s is self]
+            if not my_indices:
+                return False
+            my_index = my_indices[0]
+            return my_index == shard
         except Exception:
             return True
 
@@ -75,4 +79,3 @@ class KVServer:
             self.last_ops[cid] = (seq, old)
             reply = PutAppendReply(old)  # Return the old value, not the new!
             return reply
-
