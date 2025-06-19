@@ -1,33 +1,31 @@
 import logging
 import threading
-from typing import Tuple, Any
 
 debugging = False
 
-# Use this function for debugging
 def debug(format, *args):
     if debugging:
         logging.info(format % args)
 
-# Put or Append
 class PutAppendArgs:
-    # Add definitions here if needed
     def __init__(self, key, value):
         self.key = key
         self.value = value
+        self.client_id = None
+        self.seq_num = None
+        self.op = None
 
 class PutAppendReply:
-    # Add definitions here if needed
     def __init__(self, value):
         self.value = value
 
 class GetArgs:
-    # Add definitions here if needed
     def __init__(self, key):
         self.key = key
+        self.client_id = None
+        self.seq_num = None
 
 class GetReply:
-    # Add definitions here if needed
     def __init__(self, value):
         self.value = value
 
@@ -35,26 +33,46 @@ class KVServer:
     def __init__(self, cfg):
         self.mu = threading.Lock()
         self.cfg = cfg
+        self.kv = dict()
+        self.last_ops = dict()  # client_id -> (seq_num, result)
 
-        # Your definitions here.
+    def _responsible_for_key(self, key):
+        try:
+            shard = int(key) % getattr(self.cfg, "nservers", 1)
+            return getattr(self.cfg, "kvservers", [self])[shard] is self
+        except Exception:
+            return True
 
     def Get(self, args: GetArgs):
-        reply = GetReply(None)
-
-        # Your code here.
-
-        return reply
+        with self.mu:
+            if not self._responsible_for_key(args.key):
+                return GetReply("")
+            value = self.kv.get(args.key, "")
+            reply = GetReply(value)
+            return reply
 
     def Put(self, args: PutAppendArgs):
-        reply = PutAppendReply(None)
-
-        # Your code here.
-
-        return reply
+        with self.mu:
+            if not self._responsible_for_key(args.key):
+                return PutAppendReply("")
+            cid, seq = args.client_id, args.seq_num
+            if cid in self.last_ops and self.last_ops[cid][0] == seq:
+                return PutAppendReply(self.last_ops[cid][1])
+            self.kv[args.key] = args.value
+            self.last_ops[cid] = (seq, args.value)
+            return PutAppendReply(args.value)
 
     def Append(self, args: PutAppendArgs):
-        reply = PutAppendReply(None)
+        with self.mu:
+            if not self._responsible_for_key(args.key):
+                return PutAppendReply("")
+            cid, seq = args.client_id, args.seq_num
+            if cid in self.last_ops and self.last_ops[cid][0] == seq:
+                return PutAppendReply(self.last_ops[cid][1])
+            old = self.kv.get(args.key, "")
+            new = old + args.value
+            self.kv[args.key] = new
+            self.last_ops[cid] = (seq, old)
+            reply = PutAppendReply(old)  # Return the old value, not the new!
+            return reply
 
-        # Your code here.
-
-        return reply
