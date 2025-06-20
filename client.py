@@ -54,17 +54,17 @@ class Clerk:
         args.seq_num = seq
         args.op = op
         shard = self._shard_for_key(key)
-        result = None
-        # Try all replicas for the shard to ensure all are up-to-date
-        for rep in range(self.nreplicas):
-            server_idx = (shard + rep) % self.nservers
-            try:
-                reply = self.servers[server_idx].call(f"KVServer.{op}", args)
-                if reply is not None and hasattr(reply, "value"):
-                    result = reply.value if reply.value is not None else ""
-            except TimeoutError:
-                continue
-        return result if result is not None else ""
+        # Always try the primary first, then try next replicas if timeout
+        for attempt in range(10000):
+            for rep in range(self.nreplicas):
+                server_idx = (shard + rep) % self.nservers
+                try:
+                    reply = self.servers[server_idx].call(f"KVServer.{op}", args)
+                    if reply is not None and hasattr(reply, "value"):
+                        return reply.value if reply.value is not None else ""
+                except TimeoutError:
+                    continue
+        return ""
 
     def put(self, key: str, value: str):
         self.put_append(key, value, "Put")

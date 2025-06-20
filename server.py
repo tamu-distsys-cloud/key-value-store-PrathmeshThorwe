@@ -38,11 +38,14 @@ class KVServer:
 
     def _responsible_for_key(self, key):
         try:
-            shard = int(key) % getattr(self.cfg, "nservers", 1)
+            nshards = getattr(self.cfg, "nservers", 1)
+            nreplicas = getattr(self.cfg, "nreplicas", 1)
+            shard = int(key) % nshards
             my_indices = [i for i, s in enumerate(getattr(self.cfg, "kvservers", [])) if s is self]
             if not my_indices:
                 return False
             my_index = my_indices[0]
+            # Only the primary (first replica) for the shard processes requests
             return my_index == shard
         except Exception:
             return True
